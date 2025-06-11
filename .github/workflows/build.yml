@@ -1,15 +1,14 @@
-name: Build, Test and Package
+name: Build and Release
 
 on:
   push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+    tags:
+      - 'v*.*.*'
   release:
-    types: [ created ]
+    types: [created]
 
 jobs:
-  build-packages:
+  build:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
@@ -18,10 +17,20 @@ jobs:
     - name: Install dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential cmake rpm
+        sudo apt-get install -y build-essential cmake rpm pkg-config
 
     - name: Configure CMake
-      run: cmake -B build -S .
+      run: |
+        cmake -B build -S . --debug-output 2>&1 | tee cmake.log
+        if [ $? -ne 0 ]; then
+          echo "===== CMake Error ====="
+          cat cmake.log
+          echo "===== CMakeLists.txt ====="
+          cat CMakeLists.txt
+          echo "===== Directory Structure ====="
+          find . -type f -print
+          exit 1
+        fi
 
     - name: Build project
       run: cmake --build build --config Release
@@ -29,29 +38,20 @@ jobs:
     - name: Run tests
       run: cd build && ctest -V
 
-    - name: Create source archives
-      if: github.event_name == 'release'
+    - name: Create source tarball
       run: |
         mkdir -p artifacts
         tar -czvf artifacts/solver-source.tar.gz --exclude=".git" --exclude="build" .
         zip -r artifacts/solver-source.zip --exclude=".git/*" --exclude="build/*" .
 
-    - name: Generate DEB package
-      if: github.event_name == 'release'
+    - name: Generate packages
       run: |
         cd build
         cpack -G DEB
-        mv *.deb ../artifacts/
-
-    - name: Generate RPM package
-      if: github.event_name == 'release'
-      run: |
-        cd build
         cpack -G RPM
-        mv *.rpm ../artifacts/
+        mv *.deb *.rpm ../artifacts/
 
-    - name: Upload artifacts to Release
-      if: github.event_name == 'release'
+    - name: Upload to GitHub Release
       uses: softprops/action-gh-release@v1
       with:
         files: artifacts/*
