@@ -1,12 +1,15 @@
-name: Build and Release
+name: Build, Test and Package
 
 on:
   push:
-    tags:
-      - 'v*.*.*'  # Запуск при создании тега вида v1.0.0, v2.3.1
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  release:
+    types: [ created ]
 
 jobs:
-  build:
+  build-packages:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
@@ -24,26 +27,31 @@ jobs:
       run: cmake --build build --config Release
 
     - name: Run tests
-      run: cd build && ctest --output-on-failure
+      run: cd build && ctest -V
 
-    - name: Create source tarball
+    - name: Create source archives
+      if: github.event_name == 'release'
       run: |
         mkdir -p artifacts
-        tar -czvf artifacts/project-source.tar.gz --exclude=".git" --exclude="build" .
+        tar -czvf artifacts/solver-source.tar.gz --exclude=".git" --exclude="build" .
+        zip -r artifacts/solver-source.zip --exclude=".git/*" --exclude="build/*" .
 
     - name: Generate DEB package
+      if: github.event_name == 'release'
       run: |
         cd build
         cpack -G DEB
         mv *.deb ../artifacts/
 
     - name: Generate RPM package
+      if: github.event_name == 'release'
       run: |
         cd build
         cpack -G RPM
         mv *.rpm ../artifacts/
 
-    - name: Upload to GitHub Releases
+    - name: Upload artifacts to Release
+      if: github.event_name == 'release'
       uses: softprops/action-gh-release@v1
       with:
         files: artifacts/*
